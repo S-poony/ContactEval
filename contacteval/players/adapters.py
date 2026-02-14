@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import aiohttp
+from typing import Optional
 from contacteval.game.models import AttackerSubmission, Round
 from contacteval.players.base import Player
 from contacteval.prompts.templates import (
@@ -37,7 +38,6 @@ def extract_json(text: str) -> dict:
     match = re.search(r'(\{.*\})', text, re.DOTALL)
     if match:
         try:
-            # Simple balancing check for nested braces could be added here
             return json.loads(match.group(1))
         except json.JSONDecodeError:
             pass
@@ -212,3 +212,24 @@ class OllamaPlayer(LLMPlayer):
                     return "{}"
                 data = await resp.json()
                 return data["message"]["content"]
+
+class MockPlayer(Player):
+    """
+    Mock player for testing without external APIs.
+    """
+    def __init__(self, name: str):
+        super().__init__(name)
+        self.secret_word = None
+
+    async def submit_attacker_guess(
+        self, 
+        prefix: str, 
+        history: list[Round], 
+        error_msg: str | None = None
+    ) -> AttackerSubmission:
+        # Simple rule-based mock: match the previous attacker if possible to trigger contacts
+        word = f"{prefix}MOCK"
+        return AttackerSubmission(player_id=self.name, prefix_word=word)
+
+    async def submit_holder_guess(self, prefix: str, history: list[Round], num_contacts: int) -> str:
+        return ""
