@@ -4,7 +4,8 @@ from contacteval.players.adapters import (
     OpenAIPlayer, 
     AnthropicPlayer, 
     GeminiPlayer, 
-    OllamaPlayer
+    OllamaPlayer,
+    MockPlayer
 )
 
 def create_player(name: str, provider: str, model_id: str, **kwargs) -> Player:
