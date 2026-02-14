@@ -21,6 +21,9 @@ class GameEngine:
         self.dictionary = dictionary
 
     async def run_game(self, config: GameConfig, holder: Player, attackers: List[Player]) -> GameResult:
+        # Initialize holder with the secret word
+        holder.secret_word = config.word
+
         start_time = time.time()
         rounds = []
         current_prefix = config.word[0].upper()

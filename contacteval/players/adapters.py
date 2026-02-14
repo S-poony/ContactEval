@@ -20,6 +20,7 @@ class OpenAIPlayer(Player):
         self.model = model
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
         self.url = "https://api.openai.com/v1/chat/completions"
+        self.secret_word = None # Set by engine when acting as Holder
 
     async def _call_api(self, system_prompt: str, user_prompt: str) -> str:
         headers = {
@@ -64,12 +65,25 @@ class OpenAIPlayer(Player):
             return AttackerSubmission(player_id=self.name)
 
     async def submit_holder_guess(self, prefix: str, history: list[Round], num_contacts: int) -> str:
-        # Holder needs to know the secret word, which is not in the history
-        # We assume the prompt construction handles the secret_word injection.
-        # But wait, Player doesn't know the secret word by default in the interface.
-        # The engine should pass the secret word to the Holder prompt?
-        # Let's adjust Holder template to include secret word in the system prompt.
-        pass
+        if not self.secret_word:
+            logger.error("Holder called without secret_word set")
+            return ""
+
+        system_prompt = HOLDER_SYSTEM_PROMPT.format(secret_word=self.secret_word)
+        user_prompt = HOLDER_USER_TEMPLATE.format(
+            prefix=prefix,
+            round_number=len(history) + 1,
+            num_contacts=num_contacts,
+            history=format_history(history)
+        )
+        
+        try:
+            response_text = await self._call_api(system_prompt, user_prompt)
+            data = json.loads(response_text)
+            return data.get("guess", "")
+        except Exception as e:
+            logger.error(f"Error in submit_holder_guess for {self.name}: {e}")
+            return ""
 
 class AnthropicPlayer(Player):
     def __init__(self, name: str, model: str = "claude-3-5-sonnet-20240620", api_key: str = None):
@@ -77,6 +91,7 @@ class AnthropicPlayer(Player):
         self.model = model
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self.url = "https://api.anthropic.com/v1/messages"
+        self.secret_word = None
 
     async def _call_api(self, system_prompt: str, user_prompt: str) -> str:
         headers = {
@@ -109,8 +124,6 @@ class AnthropicPlayer(Player):
         
         try:
             response_text = await self._call_api(ATTACKER_SYSTEM_PROMPT, user_prompt)
-            # Claude sometimes adds preamble, so we might need simple JSON extraction
-            # For now, assume it's clean if we ask for it nicely
             data = json.loads(response_text)
             return AttackerSubmission(
                 player_id=self.name,
@@ -122,5 +135,151 @@ class AnthropicPlayer(Player):
             return AttackerSubmission(player_id=self.name)
 
     async def submit_holder_guess(self, prefix: str, history: list[Round], num_contacts: int) -> str:
-        # Same issue as OpenAIPlayer - secret_word missing
-        pass
+        if not self.secret_word:
+            return ""
+            
+        system_prompt = HOLDER_SYSTEM_PROMPT.format(secret_word=self.secret_word)
+        user_prompt = HOLDER_USER_TEMPLATE.format(
+            prefix=prefix,
+            round_number=len(history) + 1,
+            num_contacts=num_contacts,
+            history=format_history(history)
+        )
+        
+        try:
+            response_text = await self._call_api(system_prompt, user_prompt)
+            data = json.loads(response_text)
+            return data.get("guess", "")
+        except Exception as e:
+            logger.error(f"Error in submit_holder_guess for {self.name}: {e}")
+            return ""
+
+class GeminiPlayer(Player):
+    def __init__(self, name: str, model: str = "gemini-1.5-flash", api_key: str = None):
+        super().__init__(name)
+        self.model = model
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
+        self.url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
+        self.secret_word = None
+
+    async def _call_api(self, system_prompt: str, user_prompt: str) -> str:
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "system_instruction": {"parts": [{"text": system_prompt}]},
+            "contents": [{"parts": [{"text": user_prompt}]}],
+            "generationConfig": {"response_mime_type": "application/json"}
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.url, headers=headers, json=payload) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    logger.error(f"Google API error: {resp.status} - {text}")
+                    return "{}"
+                data = await resp.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"]
+
+    async def submit_attacker_guess(self, prefix: str, history: list[Round]) -> AttackerSubmission:
+        user_prompt = ATTACKER_USER_TEMPLATE.format(
+            prefix=prefix,
+            round_number=len(history) + 1,
+            history=format_history(history)
+        )
+        
+        try:
+            response_text = await self._call_api(ATTACKER_SYSTEM_PROMPT, user_prompt)
+            data = json.loads(response_text)
+            return AttackerSubmission(
+                player_id=self.name,
+                prefix_word=data.get("prefix_word"),
+                full_word_guess=data.get("full_word_guess")
+            )
+        except Exception as e:
+            logger.error(f"Error in submit_attacker_guess for {self.name}: {e}")
+            return AttackerSubmission(player_id=self.name)
+
+    async def submit_holder_guess(self, prefix: str, history: list[Round], num_contacts: int) -> str:
+        if not self.secret_word:
+            return ""
+            
+        system_prompt = HOLDER_SYSTEM_PROMPT.format(secret_word=self.secret_word)
+        user_prompt = HOLDER_USER_TEMPLATE.format(
+            prefix=prefix,
+            round_number=len(history) + 1,
+            num_contacts=num_contacts,
+            history=format_history(history)
+        )
+        
+        try:
+            response_text = await self._call_api(system_prompt, user_prompt)
+            data = json.loads(response_text)
+            return data.get("guess", "")
+        except Exception as e:
+            logger.error(f"Error in submit_holder_guess for {self.name}: {e}")
+            return ""
+
+class OllamaPlayer(Player):
+    def __init__(self, name: str, model: str = "llama3", base_url: str = "http://localhost:11434"):
+        super().__init__(name)
+        self.model = model
+        self.base_url = f"{base_url}/api/chat"
+        self.secret_word = None
+
+    async def _call_api(self, system_prompt: str, user_prompt: str) -> str:
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt}
+            ],
+            "stream": False,
+            "format": "json"
+        }
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.base_url, json=payload) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    logger.error(f"Ollama API error: {resp.status} - {text}")
+                    return "{}"
+                data = await resp.json()
+                return data["message"]["content"]
+
+    async def submit_attacker_guess(self, prefix: str, history: list[Round]) -> AttackerSubmission:
+        user_prompt = ATTACKER_USER_TEMPLATE.format(
+            prefix=prefix,
+            round_number=len(history) + 1,
+            history=format_history(history)
+        )
+        
+        try:
+            response_text = await self._call_api(ATTACKER_SYSTEM_PROMPT, user_prompt)
+            data = json.loads(response_text)
+            return AttackerSubmission(
+                player_id=self.name,
+                prefix_word=data.get("prefix_word"),
+                full_word_guess=data.get("full_word_guess")
+            )
+        except Exception as e:
+            logger.error(f"Error in submit_attacker_guess for {self.name}: {e}")
+            return AttackerSubmission(player_id=self.name)
+
+    async def submit_holder_guess(self, prefix: str, history: list[Round], num_contacts: int) -> str:
+        if not self.secret_word:
+            return ""
+            
+        system_prompt = HOLDER_SYSTEM_PROMPT.format(secret_word=self.secret_word)
+        user_prompt = HOLDER_USER_TEMPLATE.format(
+            prefix=prefix,
+            round_number=len(history) + 1,
+            num_contacts=num_contacts,
+            history=format_history(history)
+        )
+        
+        try:
+            response_text = await self._call_api(system_prompt, user_prompt)
+            data = json.loads(response_text)
+            return data.get("guess", "")
+        except Exception as e:
+            logger.error(f"Error in submit_holder_guess for {self.name}: {e}")
+            return ""
