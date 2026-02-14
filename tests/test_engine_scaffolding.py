@@ -48,7 +48,7 @@ async def test_simple_game():
     })
     p2 = MockPlayer("A2", {
         1: {"attacker": "EAGLE"},
-        2: {"attacker": "EAGLE"}
+        2: {"attacker": "ELEVATOR"}
     })
     p3 = MockPlayer("A3", {
         1: {"attacker": "ENGINE"},
