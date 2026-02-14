@@ -1,0 +1,22 @@
+[
+    {
+        "name": "Mock-A",
+        "provider": "mock",
+        "model_id": "none"
+    },
+    {
+        "name": "Mock-B",
+        "provider": "mock",
+        "model_id": "none"
+    },
+    {
+        "name": "Mock-C",
+        "provider": "mock",
+        "model_id": "none"
+    },
+    {
+        "name": "Mock-D",
+        "provider": "mock",
+        "model_id": "none"
+    }
+]
