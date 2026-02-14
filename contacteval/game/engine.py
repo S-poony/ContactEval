@@ -114,31 +114,30 @@ class GameEngine:
         used_words: set
     ) -> AttackerSubmission:
         
+        error_msg = None
         for attempt in range(3):
-            submission = await attacker.submit_attacker_guess(prefix, history)
+            submission = await attacker.submit_attacker_guess(prefix, history, error_msg=error_msg)
             
             # Validation
             word = submission.prefix_word
             if word:
                 word_upper = word.upper()
-                is_valid = (
-                    word_upper.startswith(prefix.upper()) and 
-                    self.dictionary.is_valid(word_upper) and 
-                    word_upper not in used_words
-                )
-                if is_valid:
-                    return submission
+                if word_upper in used_words:
+                    error_msg = f'"{word_upper}" has already been used in this game. Choose a different word.'
+                    continue
+                if not word_upper.startswith(prefix.upper()):
+                    error_msg = f'"{word_upper}" does not start with the required prefix "{prefix.upper()}".'
+                    continue
+                if not self.dictionary.is_valid(word_upper):
+                    error_msg = f'"{word_upper}" is not in the dictionary of valid English words.'
+                    continue
                 
-                # If invalid, the re-prompting/retry logic would normally happen in the Player adapter
-                # OR we could handle it here if we want the engine to manage retries.
-                # The user said: "3 times to guess a valid word ... picks a valid word at random"
+                # If we get here, it's valid
+                return submission
             elif submission.full_word_guess:
-                # Full word guesses don't necessarily need to be in the dictionary? 
-                # Actually they should, but let's be more lenient or validate them too.
                 return submission
             else:
-                # No word provided?
-                pass
+                error_msg = "No word provided. You must provide a word starting with the prefix in the 'prefix_word' field."
                 
         # Fallback to random word
         random_word = self.dictionary.get_random_word(prefix, exclude=used_words)

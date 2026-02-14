@@ -15,6 +15,7 @@ class Player(ABC):
         self,
         prefix: str,
         history: list[Round],
+        error_msg: str | None = None,
     ) -> AttackerSubmission:
         """
         Attacker role: submit a word starting with prefix, or guess the full secret word.
